@@ -1,7 +1,6 @@
 language: php
 
 php:
-  - '7.0'
   - '7.1'
   - '7.2'
 
@@ -10,7 +9,8 @@ install:
 
 script: 
   - mkdir -p build/logs
-  - vendor/bin/phpunit --configuration tests/phpunit.xml
+  - vendor/bin/phpunit tests/ArrayTest.php
+  - vendor/bin/phpunit tests/MatrixTest.php
 
 after_success:
   - travis_retry php vendor/bin/coveralls
