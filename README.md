@@ -1,12 +1,15 @@
 # Hungarian
 An implementation of the Hungarian algorithm in PHP. The Hungarian algorithm can be used to find the optimal (minimal cost) assignment between two types of entities given a cost matrix. The Hungarian algorithm is also known as the Kuhn–Munkres algorithm or Munkres assignment algorithm.
 
+# Goal of this fork
+This fork is based on [rpfk's](https://github.com/rpfk/Hungarian) implementation. My work is aimed towards code cleanup and the usage of popular libraries for e.g. matrix creation and manipulation.
+
 # Installation using Composer
 If you want to use this library in your project, the following has to be added to your `composer.json`
 
 ```
 "require": {
-  "rpfk/hungarian": "master"
+  "jul13579/hungarian": "master"
 }
 ```
 
@@ -16,7 +19,7 @@ Because the project is not published on Packagist, the following has to be added
 "repositories": [
    {
       "type": "vcs",
-      "url": "https://github.com/rpfk/Hungarian"
+      "url": "https://github.com/jul13579/Hungarian"
    }
 ]
 ```

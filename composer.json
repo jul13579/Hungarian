@@ -1,20 +1,30 @@
 {
-    "name": "rpfk/hungarian",
-    "version": "dev-master",
-    "description": "An implementation of the Hungarian algorithm in PHP.",
-    "type": "library",
-    "license": "MIT",
-    "authors": [
-        {
-            "name": "Robert Koster",
-            "email": "robert@rpfk.nl"
-        }
-    ],
-    "autoload": {
-        "psr-4": {
-            "RPFK\\Hungarian\\": "src/"
-        }
+  "name": "jul13579/hungarian",
+  "version": "dev-master",
+  "description": "An implementation of the Hungarian algorithm in PHP.",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Robert Koster",
+      "email": "robert@rpfk.nl"
     },
-    "minimum-stability": "stable",
-    "require": {}
+    {
+      "name": "Julian Lehrhuber",
+      "email": "jl@lerry.de"
+    }
+  ],
+  "require": {
+    "php": ">=7.0.0",
+    "markrogoyski/math-php": "^0.43.0"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^7.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Hungarian\\": "src/"
+    }
+  },
+  "minimum-stability": "stable"
 }
