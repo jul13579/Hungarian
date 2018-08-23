@@ -6,12 +6,12 @@
   "license": "MIT",
   "authors": [
     {
-      "name": "Robert Koster",
-      "email": "robert@rpfk.nl"
-    },
-    {
       "name": "Julian Lehrhuber",
       "email": "jl@lerry.de"
+    },
+    {
+      "name": "Robert Koster",
+      "email": "robert@rpfk.nl"
     }
   ],
   "require": {
@@ -25,6 +25,9 @@
     "psr-4": {
       "Hungarian\\": "src/"
     }
+  },
+  "autoload-dev": {
+    "psr-4": { "Hungarian\\Tests\\": "tests/" }
   },
   "minimum-stability": "stable"
 }

@@ -1,5 +1,5 @@
 <?php
-namespace RPFK\Hungarian;
+namespace Hungarian;
 
 class Hungarian
 {
