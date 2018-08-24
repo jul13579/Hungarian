@@ -3,7 +3,7 @@
 namespace Hungarian\Tests;
 
 use Hungarian\Hungarian;
-use \PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\TestCase;
 
 class ArrayTest extends TestCase
 {

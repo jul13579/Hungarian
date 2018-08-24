@@ -1,82 +1,130 @@
 <?php
 namespace Hungarian;
 
+use MathPHP\LinearAlgebra\Matrix;
+use MathPHP\LinearAlgebra\Vector;
+
 class Hungarian
 {
-    /*
-     * The assignment cost matrix to be minimised.
+    /**
+     * The assignment cost matrix to be minimised
+     *
+     * @var Matrix
      */
     public $matrix = [];
 
-    /*
-     * The reduced cost matrix.
+    /**
+     * The reduced cost matrix
+     * 
+     * @var Matrix
      */
     protected $reduced = [];
 
-    /*
-     * The primed zeros of the matrix.
+    /**
+     * The primed zeros of the matrix
      */
     protected $primed = [];
 
-    /*
-     * The starred zeros of the matrix.
+    /**
+     * The starred zeros of the matrix
      */
     protected $starred = [];
 
-    /*
-     * The covered lines of the matrix.
+    /**
+     * The covered lines of the matrix
      */
     protected $covered = [
         'column' => [],
         'row' => []
     ];
 
-    public function __construct(array $matrix)
-    {
-        $this->isValid($matrix);
-        $this->matrix = $matrix;
-        $this->reduced = $matrix;
-    }
-
-    public function isValid(array $matrix)
-    {
-        if (count($matrix) == false) {
-            throw new \Exception('Number of rows in matrix returns false.');
-        }
-        foreach ($matrix as $key => $row) {
-            if (count($row) !== count(array_intersect_key($row, ...$matrix))) {
-                throw new \Exception(printf('Column keys of row %u do not correspond to the column keys found in the rest of the matrix.', $key));
-            }
-        }
-        return true;
-    }
-
-    /*
-     * Reduces the cost matrix
+    /**
+     * Class constructor, which takes the matrix as an array or an object of MathPHP\LinearAlgebra\Matrix
+     *
+     * @param mixed Matrix as array or object of MathPHP\LinearAlgebra\Matrix.
+     * @return Hungarian
      */
-    protected function reduce()
+    public function __construct($matrix)
+    {
+        // $this->isValid($matrix);
+        $this->matrix = is_a($matrix, "MathPHP\LinearAlgebra\Matrix") ? $matrix : new Matrix($matrix);
+        $this->reduced = clone $this->matrix;
+        if ($this->matrix->isSquare()) {
+            throw new \Exception("The matrix has to be square. Consult https://www.wikihow.com/Use-the-Hungarian-Algorithm to learn about inserting dummy tasks/workers.");
+        }
+    }
+
+    // public function isValid(array $matrix)
+    // {
+    //     if (count($matrix) == false) {
+    //         throw new \Exception('Number of rows in matrix returns false.');
+    //     }
+    //     foreach ($matrix as $key => $row) {
+    //         if (count($row) !== count(array_intersect_key($row, ...$matrix))) {
+    //             throw new \Exception(printf('Column keys of row %u do not correspond to the column keys found in the rest of the matrix.', $key));
+    //         }
+    //     }
+    //     return true;
+    // }
+
+    /**
+     * Reduces the cost matrix
+     *
+     * @param Matrix $matrix
+     * @return Matrix
+     */
+    protected function reduce(Matrix $matrix)
     {
         /*
-         * Reduces all rows of the matrix
+         * Runs twice to:
+         * 1) reduce rows (transpose first, then reduce the resulting columns)
+         * 2) reduce columns (transpose again, then recude the resulting columns)
          */
-        foreach ($this->reduced as $row => $cells) {
-            $min = min($cells);
-            foreach ($cells as $column => $cell) {
-                $this->reduced[$row][$column] -= $min;
-            }
+        foreach (range(0, 1) as $run) {
+            $matrix = $matrix->transpose();
+            $matrix = $matrix->subtract(
+                new Matrix(array_map(function (Vector $vector) {
+                    return new Vector(array_fill(0, $vector->getN(), min($vector->getVector())));
+                }, $matrix->asVectors()))
+            );
         }
+        return $matrix;
+    }
 
-        $transposed = array_map(null, ...$this->reduced);
+    /**
+     * Creates boolean matrix which "stars" zeros from the reduced matrix
+     *
+     * @var Matrix
+     * @return array
+     */
+    protected function star_zeros(Matrix &$matrix, array $starred = [])
+    {
+        
+        
+        // if (count($starred) === $matrix->getM()) {
+        //     return $starred;
+        // } else {
+        //     foreach ($matrix->getMatrix() as $row => $cells) {
+        //         if (in_array($row, array_keys($starred))) {
+        //             continue;
+        //         }
+        //         foreach (array_keys($cells, 0, true) as $column) {
+        //             if (in_array($column, $starred)) {
+        //                 continue;
+        //             }
+        //             return $this->star_zeros($matrix, array_merge($starred, array($row => $column)));
+        //         }
+        //     }
+        // }
 
-        /*
-         * Reduces all columns of the matrix
-         */
-        foreach ($transposed as $column => $cells) {
-            $min = min($cells);
-            foreach ($cells as $row => $cell) {
-                $this->reduced[$row][$column] -= $min;
-            }
-        }
+
+        // foreach ($this->reduced as $row => $cells) {
+        //     $columns = array_diff(array_keys($cells, 0, true), $this->covered['column']);
+        //     if (isset($columns[0])) {
+        //         $this->addStar($row, $columns[0]);
+        //         $this->covered['column'][] = $columns[0];
+        //     }
+        // }
     }
 
     public function addPrime($row, $column)
@@ -177,32 +225,22 @@ class Hungarian
         return $non_covered_zero_matrix;
     }
 
-    public function solve($print = false)
+    /**
+     * Solves the matrix using the hungarian algorithm
+     *
+     * @return void
+     */
+    public function solve()
     {
-        $print ? $this->printMatrix($this->matrix, 'Original cost matrix:') : null;
-        /*
-         * Preliminary Steps:
-         *  -  Generate reduced matrix
-         *  -  For each row
-         *     - Star first non-covered zero
-         *     - Cover column of starred zero
-         */
-        $this->reduce();
-        $print ? $this->printMatrix($this->reduced, 'Reduced cost matrix:') : null;
-        foreach ($this->reduced as $row => $cells) {
-            $columns = array_diff(array_keys($cells, 0, true), $this->covered['column']);
-            if (isset($columns[0])) {
-                $this->addStar($row, $columns[0]);
-                $this->covered['column'][] = $columns[0];
-            }
-        }
-        $print ? $this->printMatrix($this->reduced, 'Final preliminary reduced cost matrix:') : null;
+        $this->reduced = $this->reduce($this->reduced);
+
+        $this->starred = $this->star_zeros($this->reduced);
 
         /*
          * Generate zero matrix
          */
-        start:
-        $zero_matrix = $this->getZeroMatrix();
+        start :
+            $zero_matrix = $this->getZeroMatrix();
         $non_covered_zero_matrix = $this->getNonCoveredZeroMatrix($zero_matrix);
         while ($non_covered_zero_matrix) {
 
@@ -342,38 +380,5 @@ class Hungarian
             goto start;
         }
 
-    }
-
-    public function printMatrix($matrix, $title = null)
-    {
-        if (!is_null($title)) {
-            printf("\n" . $title);
-        }
-        printf("\n  ");
-        foreach ($matrix[key($matrix)] as $column => $cell) {
-            if (array_search($column, $this->covered['column'], true) !== false) {
-                printf("C \t  ");
-            } else {
-                printf("  \t  ");
-            }
-        }
-        printf("\n\n");
-        foreach ($matrix as $row => $cells) {
-            printf("| ");
-            foreach ($cells as $column => $cell) {
-                printf("%d", $cell);
-                if (isset($this->starred[$row]) && $this->starred[$row] === $column) {
-                    printf("*");
-                }
-                if (isset($this->primed[$row]) && $this->primed[$row] === $column) {
-                    printf("'");
-                }
-                printf(" \t| ");
-            }
-            if (array_search($row, $this->covered['row'], true) !== false) {
-                printf("C");
-            }
-            printf("\n");
-        }
     }
 }
