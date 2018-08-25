@@ -3,6 +3,7 @@ namespace Hungarian;
 
 use MathPHP\LinearAlgebra\Matrix;
 use MathPHP\LinearAlgebra\Vector;
+use drupol\phpermutations\Generators\Permutations;
 
 class Hungarian
 {
@@ -11,14 +12,21 @@ class Hungarian
      *
      * @var Matrix
      */
-    public $matrix = [];
+    public $matrix;
 
     /**
      * The reduced cost matrix
      * 
      * @var Matrix
      */
-    protected $reduced = [];
+    protected $reduced;
+
+    /**
+     * Holds all possible assignments of workers to tasks, sorted ascending by total cost of the assignment
+     *
+     * @var array
+     */
+    protected $assignments = [];
 
     /**
      * The primed zeros of the matrix
@@ -49,7 +57,7 @@ class Hungarian
         // $this->isValid($matrix);
         $this->matrix = is_a($matrix, "MathPHP\LinearAlgebra\Matrix") ? $matrix : new Matrix($matrix);
         $this->reduced = clone $this->matrix;
-        if ($this->matrix->isSquare()) {
+        if (!$this->matrix->isSquare()) {
             throw new \Exception("The matrix has to be square. Consult https://www.wikihow.com/Use-the-Hungarian-Algorithm to learn about inserting dummy tasks/workers.");
         }
     }
@@ -67,6 +75,13 @@ class Hungarian
     //     return true;
     // }
 
+    public function totalCost(array $assignment)
+    {
+        return array_sum(array_map(function (int $key, int $value) {
+            return $this->matrix[$key][$value];
+        }, array_keys($assignment), $assignment));
+    }
+
     /**
      * Reduces the cost matrix
      *
@@ -77,164 +92,150 @@ class Hungarian
     {
         /*
          * Runs twice to:
-         * 1) reduce rows (transpose first, then reduce the resulting columns)
-         * 2) reduce columns (transpose again, then recude the resulting columns)
+         * 1) reduce rows (reduce the resulting rows first, then transpose)
+         * 2) reduce columns (recude the resulting rows, then transpose again)
          */
         foreach (range(0, 1) as $run) {
-            $matrix = $matrix->transpose();
             $matrix = $matrix->subtract(
                 new Matrix(array_map(function (Vector $vector) {
                     return new Vector(array_fill(0, $vector->getN(), min($vector->getVector())));
-                }, $matrix->asVectors()))
+                }, $matrix->transpose()->asVectors()))
             );
+            $matrix = $matrix->transpose();
         }
         return $matrix;
     }
 
     /**
-     * Creates boolean matrix which "stars" zeros from the reduced matrix
+     * Creates an array of all possible assignments, sorted ascending by total cost of each assignment.
      *
      * @var Matrix
      * @return array
      */
-    protected function star_zeros(Matrix &$matrix, array $starred = [])
+    protected function starZeros(Matrix &$matrix, array $starred = [])
     {
-        
-        
-        // if (count($starred) === $matrix->getM()) {
-        //     return $starred;
-        // } else {
-        //     foreach ($matrix->getMatrix() as $row => $cells) {
-        //         if (in_array($row, array_keys($starred))) {
-        //             continue;
-        //         }
-        //         foreach (array_keys($cells, 0, true) as $column) {
-        //             if (in_array($column, $starred)) {
-        //                 continue;
-        //             }
-        //             return $this->star_zeros($matrix, array_merge($starred, array($row => $column)));
-        //         }
-        //     }
-        // }
+        $this->assignments = (new Permutations(range(0, $matrix->getN() - 1), $matrix->getN()))->toArray();
 
-
-        // foreach ($this->reduced as $row => $cells) {
-        //     $columns = array_diff(array_keys($cells, 0, true), $this->covered['column']);
-        //     if (isset($columns[0])) {
-        //         $this->addStar($row, $columns[0]);
-        //         $this->covered['column'][] = $columns[0];
-        //     }
-        // }
-    }
-
-    public function addPrime($row, $column)
-    {
-        $this->primed[$row] = $column;
-        return $this;
-    }
-
-    public function addStar($row, $column)
-    {
-        $this->starred[$row] = $column;
-        return $this;
-    }
-
-    public function getPrimed()
-    {
-        return $this->primed;
-    }
-
-    public function hasPrimeInColumn($column)
-    {
-        return (bool)array_search($column, $this->primed, true);
-    }
-
-    public function getPrimeFromColumn($column)
-    {
-        return array_search($column, $this->primed, true);
-    }
-
-    public function hasPrimeInRow($row)
-    {
-        return array_key_exists($row, $this->primed);
-    }
-
-    public function getPrimeFromRow($row)
-    {
-        if (!key_exists($row, $this->primed)) {
-            return false;
-        }
-        return $this->primed[$row];
-    }
-
-    public function hasStarInColumn($column)
-    {
-        return array_search($column, $this->starred, true) !== false;
-    }
-
-    public function getStarFromColumn($column)
-    {
-        return array_search($column, $this->starred, true);
-    }
-
-    public function hasStarInRow($row)
-    {
-        return array_key_exists($row, $this->starred);
-    }
-
-    public function getStarFromRow($row)
-    {
-        if (!key_exists($row, $this->starred)) {
-            return false;
-        }
-        return $this->starred[$row];
-    }
-
-    public function getZeroMatrix()
-    {
-        $zeros = [];
-        foreach ($this->reduced as $row => $cells) {
-            $zeros[$row] = array_keys($cells, 0, true);
-        }
-        return $zeros;
-    }
-
-    public function getCoveredZeroMatrix($zero_matrix)
-    {
-        $covered_zero_matrix = [];
-        foreach ($zero_matrix as $row => $cells) {
-            foreach ($cells as $column) {
-                if (in_array($row, $this->covered['row'], true) || in_array($column, $this->covered['column'], true)) {
-                    $covered_zero_matrix[$row][] = $column;
-                }
+        usort($this->assignments, function (array $assignment_1, array $assignment_2) {
+            $cost_1 = $this->totalCost($assignment_1);
+            $cost_2 = $this->totalCost($assignment_2);
+            if ($cost_1 == $cost_2) {
+                return 0;
             }
-        }
-        return $covered_zero_matrix;
+            return ($cost_1 < $cost_2) ? -1 : 1;
+        });
+
+        return $this->assignments[0];
     }
 
-    public function getNonCoveredZeroMatrix($zero_matrix)
-    {
-        $non_covered_zero_matrix = [];
-        foreach ($zero_matrix as $row => $cells) {
-            foreach ($cells as $column) {
-                if (!in_array($row, $this->covered['row'], true) && !in_array($column, $this->covered['column'], true)) {
-                    $non_covered_zero_matrix[$row][] = $column;
-                }
-            }
-        }
-        return $non_covered_zero_matrix;
-    }
+    // public function addPrime($row, $column)
+    // {
+    //     $this->primed[$row] = $column;
+    //     return $this;
+    // }
+
+    // public function addStar($row, $column)
+    // {
+    //     $this->starred[$row] = $column;
+    //     return $this;
+    // }
+
+    // public function getPrimed()
+    // {
+    //     return $this->primed;
+    // }
+
+    // public function hasPrimeInColumn($column)
+    // {
+    //     return (bool)array_search($column, $this->primed, true);
+    // }
+
+    // public function getPrimeFromColumn($column)
+    // {
+    //     return array_search($column, $this->primed, true);
+    // }
+
+    // public function hasPrimeInRow($row)
+    // {
+    //     return array_key_exists($row, $this->primed);
+    // }
+
+    // public function getPrimeFromRow($row)
+    // {
+    //     if (!key_exists($row, $this->primed)) {
+    //         return false;
+    //     }
+    //     return $this->primed[$row];
+    // }
+
+    // public function hasStarInColumn($column)
+    // {
+    //     return array_search($column, $this->starred, true) !== false;
+    // }
+
+    // public function getStarFromColumn($column)
+    // {
+    //     return array_search($column, $this->starred, true);
+    // }
+
+    // public function hasStarInRow($row)
+    // {
+    //     return array_key_exists($row, $this->starred);
+    // }
+
+    // public function getStarFromRow($row)
+    // {
+    //     if (!key_exists($row, $this->starred)) {
+    //         return false;
+    //     }
+    //     return $this->starred[$row];
+    // }
+
+    // public function getZeroMatrix()
+    // {
+    //     $zeros = [];
+    //     foreach ($this->reduced as $row => $cells) {
+    //         $zeros[$row] = array_keys($cells, 0, true);
+    //     }
+    //     return $zeros;
+    // }
+
+    // public function getCoveredZeroMatrix($zero_matrix)
+    // {
+    //     $covered_zero_matrix = [];
+    //     foreach ($zero_matrix as $row => $cells) {
+    //         foreach ($cells as $column) {
+    //             if (in_array($row, $this->covered['row'], true) || in_array($column, $this->covered['column'], true)) {
+    //                 $covered_zero_matrix[$row][] = $column;
+    //             }
+    //         }
+    //     }
+    //     return $covered_zero_matrix;
+    // }
+
+    // public function getNonCoveredZeroMatrix($zero_matrix)
+    // {
+    //     $non_covered_zero_matrix = [];
+    //     foreach ($zero_matrix as $row => $cells) {
+    //         foreach ($cells as $column) {
+    //             if (!in_array($row, $this->covered['row'], true) && !in_array($column, $this->covered['column'], true)) {
+    //                 $non_covered_zero_matrix[$row][] = $column;
+    //             }
+    //         }
+    //     }
+    //     return $non_covered_zero_matrix;
+    // }
 
     /**
      * Solves the matrix using the hungarian algorithm
      *
-     * @return void
+     * @return array
      */
     public function solve()
     {
         $this->reduced = $this->reduce($this->reduced);
 
-        $this->starred = $this->star_zeros($this->reduced);
+        return $this->starZeros($this->reduced);
 
         /*
          * Generate zero matrix

@@ -62,44 +62,35 @@ class ArrayTest extends TestCase
         [-4, -4, -4, -4, -1, -1, -1, -1, -10, -3]
     ];
 
-    private function cost_sum(array $matrix, array $starred)
-    {
-        $cost = 0;
-        foreach ($starred as $row => $column) {
-            $cost += $matrix[$row][$column];
-        }
-        return $cost;
-    }
-
     public function testMatrix1()
     {
         $hungarian = new Hungarian($this->matrix1);
         $result = $hungarian->solve();
-        $this->assertEquals(1, $this->cost_sum($this->matrix1, $result));
+        $this->assertEquals(1, $hungarian->totalCost($result));
     }
 
     public function testMatrix2()
     {
         $hungarian = new Hungarian($this->matrix2);
         $result = $hungarian->solve();
-        $this->assertEquals(2, $this->cost_sum($this->matrix2, $result));
+        $this->assertEquals(2, $hungarian->totalCost($result));
     }
     public function testMatrix3()
     {
         $hungarian = new Hungarian($this->matrix3);
         $result = $hungarian->solve();
-        $this->assertEquals(-231, $this->cost_sum($this->matrix3, $result));
+        $this->assertEquals(-231, $hungarian->totalCost($result));
     }
     public function testMatrix4()
     {
         $hungarian = new Hungarian($this->matrix4);
         $result = $hungarian->solve();
-        $this->assertEquals(-227, $this->cost_sum($this->matrix4, $result));
+        $this->assertEquals(-227, $hungarian->totalCost($result));
     }
     public function testMatrix5()
     {
         $hungarian = new Hungarian($this->matrix5);
         $result = $hungarian->solve();
-        $this->assertEquals(-229, $this->cost_sum($this->matrix5, $result));
+        $this->assertEquals(-229, $hungarian->totalCost($result));
     }
 }

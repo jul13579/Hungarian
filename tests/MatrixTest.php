@@ -63,20 +63,10 @@ class MatrixTest extends TestCase
         [-4, -4, -4, -4, -1, -1, -1, -1, -10, -3]
     ];
 
-    // TODO: Test lib using Matrix objects
-    private function cost_sum(array $matrix, array $starred)
-    {
-        $cost = 0;
-        foreach ($starred as $row => $column) {
-            $cost += $matrix[$row][$column];
-        }
-        return $cost;
-    }
-
     public function testMatrix1()
     {
-        $hungarian = new Hungarian($this->matrix1);
+        $hungarian = new Hungarian(new Matrix($this->matrix1));
         $result = $hungarian->solve();
-        $this->assertEquals(1, $this->cost_sum($this->matrix1, $result));
+        $this->assertEquals(1, $hungarian->totalCost($result));
     }
 }
