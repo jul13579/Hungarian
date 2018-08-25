@@ -69,4 +69,32 @@ class MatrixTest extends TestCase
         $result = $hungarian->solve();
         $this->assertEquals(1, $hungarian->totalCost($result));
     }
+
+    public function testMatrix2()
+    {
+        $hungarian = new Hungarian(new Matrix($this->matrix2));
+        $result = $hungarian->solve();
+        $this->assertEquals(2, $hungarian->totalCost($result));
+    }
+
+    public function testMatrix3()
+    {
+        $hungarian = new Hungarian(new Matrix($this->matrix3));
+        $result = $hungarian->solve();
+        $this->assertEquals(-231, $hungarian->totalCost($result));
+    }
+
+    public function testMatrix4()
+    {
+        $hungarian = new Hungarian(new Matrix($this->matrix4));
+        $result = $hungarian->solve();
+        $this->assertEquals(-227, $hungarian->totalCost($result));
+    }
+
+    public function testMatrix5()
+    {
+        $hungarian = new Hungarian(new Matrix($this->matrix5));
+        $result = $hungarian->solve();
+        $this->assertEquals(-229, $hungarian->totalCost($result));
+    }
 }
