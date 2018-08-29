@@ -3,7 +3,6 @@ namespace Hungarian;
 
 use MathPHP\LinearAlgebra\Matrix;
 use MathPHP\LinearAlgebra\Vector;
-use drupol\phpermutations\Generators\Permutations;
 
 class Hungarian
 {
@@ -20,13 +19,6 @@ class Hungarian
      * @var Matrix
      */
     protected $reduced;
-
-    /**
-     * Holds all possible assignments of workers to tasks, sorted ascending by total cost of the assignment
-     *
-     * @var array
-     */
-    protected $assignments = [];
 
     /**
      * The primed zeros of the matrix
@@ -56,7 +48,6 @@ class Hungarian
     {
         // $this->isValid($matrix);
         $this->matrix = is_a($matrix, "MathPHP\LinearAlgebra\Matrix") ? $matrix : new Matrix($matrix);
-        $this->reduced = clone $this->matrix;
         if (!$this->matrix->isSquare()) {
             throw new \Exception("The matrix has to be square. Consult https://www.wikihow.com/Use-the-Hungarian-Algorithm to learn about inserting dummy tasks/workers.");
         }
@@ -75,10 +66,29 @@ class Hungarian
     //     return true;
     // }
 
+    /**
+     * Get the reduced matrix
+     *
+     * @return Matrix
+     */
+    public function getReducedMatrix()
+    {
+        if (!isset($this->reduced)) {
+            $this->reduced = $this->reduce($this->matrix);
+        }
+        return $this->reduced;
+    }
+
+    /**
+     * Calculate total cost of given worker-to-task-assignment
+     *
+     * @param array $assignment Assignment
+     * @return int
+     */
     public function totalCost(array $assignment)
     {
-        return array_sum(array_map(function (int $key, int $value) {
-            return $this->matrix[$key][$value];
+        return array_sum(array_map(function (int $column, int $row) {
+            return $this->matrix[$row][$column];
         }, array_keys($assignment), $assignment));
     }
 
@@ -107,25 +117,28 @@ class Hungarian
     }
 
     /**
-     * Creates an array of all possible assignments, sorted ascending by total cost of each assignment.
+     * Tries to star as many zeros as possible, given the reduced matrix
      *
-     * @var Matrix
+     * @var Matrix The reduced matrix
+     * @var array The array to store coverage-information to
      * @return array
      */
-    protected function starZeros(Matrix &$matrix, array $starred = [])
+    protected function starZeros(Matrix &$matrix, array &$covered)
     {
-        $this->assignments = (new Permutations(range(0, $matrix->getN() - 1), $matrix->getN()))->toArray();
-
-        usort($this->assignments, function (array $assignment_1, array $assignment_2) {
-            $cost_1 = $this->totalCost($assignment_1);
-            $cost_2 = $this->totalCost($assignment_2);
-            if ($cost_1 == $cost_2) {
-                return 0;
+        $starred = [];
+        foreach ($matrix->asVectors() as $column_index => $vector) {
+            $rows = array_values(
+                array_diff(
+                    array_keys($vector->getVector(), 0, true),
+                    $starred
+                )
+            );
+            if (isset($rows[0])) {
+                $starred[$column_index] = $rows[0];
+                $covered['column'][] = $column_index;
             }
-            return ($cost_1 < $cost_2) ? -1 : 1;
-        });
-
-        return $this->assignments[0];
+        }
+        return $starred;
     }
 
     // public function addPrime($row, $column)
@@ -233,9 +246,32 @@ class Hungarian
      */
     public function solve()
     {
-        $this->reduced = $this->reduce($this->reduced);
+        /**
+         * Step 1)
+         * - Reduce matrix and try to star as much zeros as possible
+         * - If all workers were assigned, return solution
+         */
+        $this->reduced = $this->reduce($this->matrix);
+        $this->starred = $this->starZeros($this->reduced, $this->covered);
 
-        return $this->starZeros($this->reduced);
+        if (count($this->starred) === $this->matrix->getM()) {
+            return $this->starred;
+        }
+
+        /**
+         * Step 2)
+         * - Get the minimum value of uncovered column elements
+         */
+        $uncovered_matrix = clone $this->reduced;
+        $uncovered_column_indexes = array_diff(
+            range(0, $this->matrix->getN() - 1),
+            $this->covered['column']
+        );
+        rsort($uncovered_column_indexes);
+        foreach ($uncovered_column_indexes as $column) {
+            $uncovered_matrix = $uncovered_matrix->columnExclude($column);
+        }
+        $min = min(min($uncovered_matrix->getMatrix()));
 
         /*
          * Generate zero matrix
