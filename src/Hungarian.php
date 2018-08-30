@@ -26,14 +26,6 @@ class Hungarian
     protected $starred = [];
 
     /**
-     * The covered lines of the matrix
-     */
-    protected $covered = [
-        'column' => [],
-        'row' => []
-    ];
-
-    /**
      * The primed zeros of the matrix
      */
     protected $primed = [];
@@ -51,6 +43,8 @@ class Hungarian
         if (!$this->matrix->isSquare()) {
             throw new \Exception("The matrix has to be square. Consult https://www.wikihow.com/Use-the-Hungarian-Algorithm to learn about inserting dummy tasks/workers.");
         }
+        $this->starred = array_fill(0, $this->matrix->getM(), -1);
+        $this->primed = $this->starred;
     }
 
     // public function isValid(array $matrix)
@@ -65,6 +59,35 @@ class Hungarian
     //     }
     //     return true;
     // }
+
+    protected function isRowPrimed(int $row_index)
+    {
+        return $this->primed[$row_index] > -1;
+    }
+
+    protected function isColumnCovered(int $column_index)
+    {
+        return $this->starred[$column_index] > -1 && !$this->isRowPrimed($this->starred[$column_index]);
+    }
+
+    protected function getRowMinimums(Matrix $matrix)
+    {
+        return array_map("min", $matrix->getMatrix());
+    }
+
+    protected function getColumnMinimums(Matrix $matrix)
+    {
+        return $this->getRowMinimums($matrix->transpose());
+    }
+
+    protected function getUncoveredMinimums(Matrix $matrix)
+    {
+        return array_map(function (int $row_index, array $row) {
+            return min(array_filter($row, function (int $element, int $column_index) use ($row_index) {
+                return !$this->isRowPrimed($row_index) && !$this->isColumnCovered($column_index);
+            }, ARRAY_FILTER_USE_BOTH));
+        }, array_keys($matrix->getMatrix()), $matrix->getMatrix());
+    }
 
     /**
      * Get the reduced matrix
@@ -100,19 +123,20 @@ class Hungarian
      */
     protected function reduce(Matrix $matrix)
     {
-        /*
-         * Runs twice to:
-         * 1) reduce rows (reduce the resulting rows first, then transpose)
-         * 2) reduce columns (recude the resulting rows, then transpose again)
-         */
-        foreach (range(0, 1) as $run) {
-            $matrix = $matrix->subtract(
-                new Matrix(array_map(function (Vector $vector) {
-                    return new Vector(array_fill(0, $vector->getN(), min($vector->getVector())));
-                }, $matrix->transpose()->asVectors()))
-            );
-            $matrix = $matrix->transpose();
-        }
+        $columnMinimums = $this->getColumnMinimums($matrix);
+        $matrix = $matrix->transpose()->subtract(
+            new Matrix(array_map(function (int $min) use ($matrix) {
+                return new Vector(array_fill(0, $matrix->getM(), $min));
+            }, $columnMinimums))
+        )->transpose();
+
+        $rowMinimums = $this->getRowMinimums($matrix);
+        $matrix = $matrix->subtract(
+            new Matrix(array_map(function (int $min) use ($matrix) {
+                return new Vector(array_fill(0, $matrix->getM(), $min));
+            }, $rowMinimums))
+        );
+
         return $matrix;
     }
 
@@ -258,14 +282,12 @@ class Hungarian
     {
         /**
          * Step 1)
-         * - Reduce matrix and try to star as much zeros as possible
-         * - Set a mark at each column containing a starred zero
+         * - Reduce matrix
+         * - Try to star as much zeros as possible
          * - If all workers were assigned, return solution
          */
         $this->reduced = $this->reduce($this->matrix);
         $this->starred = $this->starZeros($this->reduced);
-
-        $this->covered['column'] = array_keys($this->starred);
 
         if (count($this->starred) === $this->matrix->getM()) {
             return $this->starred;
@@ -300,15 +322,15 @@ class Hungarian
         );
         $this->reduced = $this->reduced->add($sum_matrix);
 
-        for($column_index = 0; $column_index < $this->reduced->getM(); $column_index++) {
+        for ($column_index = 0; $column_index < $this->reduced->getM(); $column_index++) {
             if (in_array($column_index, $this->covered['column'])) {
                 continue;
             }
-            for($row_index = 0; $row_index < $this->reduced->getN(); $row_index++) {
+            for ($row_index = 0; $row_index < $this->reduced->getN(); $row_index++) {
                 if (!in_array($row_index, $this->covered['row']) && $this->reduced[$row_index][$column_index] === 0) {
                     $this->primed[$column_index] = $row_index;
                     $column_to_uncover = array_search($row_index, $this->starred, true);
-                    if(isset($column_to_uncover)) {
+                    if (isset($column_to_uncover)) {
                         unset($this->covered['column'][$column_to_uncover]);
                     }
                     break 2;
