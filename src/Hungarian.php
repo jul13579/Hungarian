@@ -21,11 +21,6 @@ class Hungarian
     protected $reduced;
 
     /**
-     * The primed zeros of the matrix
-     */
-    protected $primed = [];
-
-    /**
      * The starred zeros of the matrix
      */
     protected $starred = [];
@@ -37,6 +32,11 @@ class Hungarian
         'column' => [],
         'row' => []
     ];
+
+    /**
+     * The primed zeros of the matrix
+     */
+    protected $primed = [];
 
     /**
      * Class constructor, which takes the matrix as an array or an object of MathPHP\LinearAlgebra\Matrix
@@ -123,7 +123,7 @@ class Hungarian
      * @var array The array to store coverage-information to
      * @return array
      */
-    protected function starZeros(Matrix &$matrix, array &$covered)
+    protected function starZeros(Matrix &$matrix)
     {
         $starred = [];
         foreach ($matrix->asVectors() as $column_index => $vector) {
@@ -135,10 +135,20 @@ class Hungarian
             );
             if (isset($rows[0])) {
                 $starred[$column_index] = $rows[0];
-                $covered['column'][] = $column_index;
             }
         }
         return $starred;
+    }
+
+    protected function getUncoveredMatrix(Matrix $matrix, array $covered_columns, array $covered_rows)
+    {
+        foreach (array_reverse($covered_columns) as $column) {
+            $matrix = $matrix->columnExclude($column);
+        }
+        foreach (array_reverse($covered_rows) as $row) {
+            $matrix = $matrix->rowExclude($row);
+        }
+        return $matrix;
     }
 
     // public function addPrime($row, $column)
@@ -249,10 +259,13 @@ class Hungarian
         /**
          * Step 1)
          * - Reduce matrix and try to star as much zeros as possible
+         * - Set a mark at each column containing a starred zero
          * - If all workers were assigned, return solution
          */
         $this->reduced = $this->reduce($this->matrix);
-        $this->starred = $this->starZeros($this->reduced, $this->covered);
+        $this->starred = $this->starZeros($this->reduced);
+
+        $this->covered['column'] = array_keys($this->starred);
 
         if (count($this->starred) === $this->matrix->getM()) {
             return $this->starred;
@@ -260,18 +273,49 @@ class Hungarian
 
         /**
          * Step 2)
-         * - Get the minimum value of uncovered column elements
+         * - Get the minimum value of uncovered elements
+         * - Subtract minimum from double covered elements
+         * - Add minimum to uncovered elements
+         * - Prime any uncovered zero
+         * - If there is a starred zero in the primed zero's row, uncover the starred zero's column
          */
-        $uncovered_matrix = clone $this->reduced;
-        $uncovered_column_indexes = array_diff(
-            range(0, $this->matrix->getN() - 1),
-            $this->covered['column']
-        );
-        rsort($uncovered_column_indexes);
-        foreach ($uncovered_column_indexes as $column) {
-            $uncovered_matrix = $uncovered_matrix->columnExclude($column);
-        }
+        $uncovered_matrix = $this->getUncoveredMatrix($this->reduced, $this->covered['column'], $this->covered['row']);
         $min = min(min($uncovered_matrix->getMatrix()));
+
+        $rows = $this->covered['row'];
+        $columns = $this->covered['column'];
+        $row_size = $this->reduced->getN();
+        $sum_matrix = new Matrix(
+            array_map(function ($row_index) use ($rows, $columns, $row_size, $min) {
+                $new_row = array_fill(0, $row_size, 0);
+                foreach ($new_row as $column_index => $element) {
+                    if (in_array($row_index, $rows) && in_array($column_index, $columns)) {
+                        $new_row[$column_index] = $min;
+                    } elseif (!in_array($row_index, $rows) && !in_array($column_index, $columns)) {
+                        $new_row[$column_index] = -$min;
+                    }
+                }
+                return $new_row;
+            }, range(0, $this->reduced->getM() - 1))
+        );
+        $this->reduced = $this->reduced->add($sum_matrix);
+
+        for($column_index = 0; $column_index < $this->reduced->getM(); $column_index++) {
+            if (in_array($column_index, $this->covered['column'])) {
+                continue;
+            }
+            for($row_index = 0; $row_index < $this->reduced->getN(); $row_index++) {
+                if (!in_array($row_index, $this->covered['row']) && $this->reduced[$row_index][$column_index] === 0) {
+                    $this->primed[$column_index] = $row_index;
+                    $column_to_uncover = array_search($row_index, $this->starred, true);
+                    if(isset($column_to_uncover)) {
+                        unset($this->covered['column'][$column_to_uncover]);
+                    }
+                    break 2;
+                }
+            }
+        }
+
 
         /*
          * Generate zero matrix
