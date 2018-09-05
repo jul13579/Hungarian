@@ -30,6 +30,9 @@ class Hungarian
      */
     protected $primed = [];
 
+    const COLUMN_REDUCTION = 0;
+    const ROW_REDUCTION = 1;
+
     /**
      * Class constructor, which takes the matrix as an array or an object of MathPHP\LinearAlgebra\Matrix
      *
@@ -60,6 +63,16 @@ class Hungarian
     //     return true;
     // }
 
+    protected function isColumnStarred(int $column_index)
+    {
+        return $this->starred[$column_index] > -1;
+    }
+
+    protected function isRowStarred(int $row_index)
+    {
+        return isset(array_flip($this->starred)[$row_index]);
+    }
+
     protected function isRowPrimed(int $row_index)
     {
         return $this->primed[$row_index] > -1;
@@ -67,12 +80,17 @@ class Hungarian
 
     protected function isColumnCovered(int $column_index)
     {
-        return $this->starred[$column_index] > -1 && !$this->isRowPrimed($this->starred[$column_index]);
+        return $this->isColumnStarred($column_index) && !$this->isRowPrimed($this->starred[$column_index]);
+    }
+
+    protected function isRowCovered(int $row_index)
+    {
+        return $this->isRowPrimed($row_index);
     }
 
     protected function getRowMinimums(Matrix $matrix)
     {
-        return array_map("min", $matrix->getMatrix());
+        return new Vector(array_map("min", $matrix->getMatrix()));
     }
 
     protected function getColumnMinimums(Matrix $matrix)
@@ -80,26 +98,13 @@ class Hungarian
         return $this->getRowMinimums($matrix->transpose());
     }
 
-    protected function getUncoveredMinimums(Matrix $matrix)
+    protected function getUncoveredRowElementMinimums(Matrix $matrix)
     {
-        return array_map(function (int $row_index, array $row) {
+        return new Vector(array_map(function (int $row_index, array $row) {
             return min(array_filter($row, function (int $element, int $column_index) use ($row_index) {
-                return !$this->isRowPrimed($row_index) && !$this->isColumnCovered($column_index);
+                return !$this->isColumnCovered($column_index);// && !$this->isRowPrimed($row_index);
             }, ARRAY_FILTER_USE_BOTH));
-        }, array_keys($matrix->getMatrix()), $matrix->getMatrix());
-    }
-
-    /**
-     * Get the reduced matrix
-     *
-     * @return Matrix
-     */
-    public function getReducedMatrix()
-    {
-        if (!isset($this->reduced)) {
-            $this->reduced = $this->reduce($this->matrix);
-        }
-        return $this->reduced;
+        }, array_keys($matrix->getMatrix()), $matrix->getMatrix()));
     }
 
     /**
@@ -115,36 +120,23 @@ class Hungarian
         }, array_keys($assignment), $assignment));
     }
 
-    /**
-     * Reduces the cost matrix
-     *
-     * @param Matrix $matrix
-     * @return Matrix
-     */
-    protected function reduce(Matrix $matrix)
+    protected function reduce(Matrix $matrix, Vector $minimums, int $reduction_type)
     {
-        $columnMinimums = $this->getColumnMinimums($matrix);
-        $matrix = $matrix->transpose()->subtract(
-            new Matrix(array_map(function (int $min) use ($matrix) {
-                return new Vector(array_fill(0, $matrix->getM(), $min));
-            }, $columnMinimums))
-        )->transpose();
+        $matrix = $reduction_type === self::COLUMN_REDUCTION ? $matrix->transpose() : $matrix;
 
-        $rowMinimums = $this->getRowMinimums($matrix);
         $matrix = $matrix->subtract(
             new Matrix(array_map(function (int $min) use ($matrix) {
                 return new Vector(array_fill(0, $matrix->getM(), $min));
-            }, $rowMinimums))
+            }, $minimums->getVector()))
         );
 
-        return $matrix;
+        return $reduction_type === self::COLUMN_REDUCTION ? $matrix->transpose() : $matrix;
     }
 
     /**
      * Tries to star as many zeros as possible, given the reduced matrix
      *
      * @var Matrix The reduced matrix
-     * @var array The array to store coverage-information to
      * @return array
      */
     protected function starZeros(Matrix &$matrix)
@@ -161,7 +153,7 @@ class Hungarian
                 $starred[$column_index] = $rows[0];
             }
         }
-        return $starred;
+        return array_replace($this->starred, $starred);
     }
 
     protected function getUncoveredMatrix(Matrix $matrix, array $covered_columns, array $covered_rows)
@@ -286,10 +278,16 @@ class Hungarian
          * - Try to star as much zeros as possible
          * - If all workers were assigned, return solution
          */
-        $this->reduced = $this->reduce($this->matrix);
+        $columnMinimums = $this->getColumnMinimums($this->matrix);
+        $this->reduced = $this->reduce($this->matrix, $columnMinimums, self::COLUMN_REDUCTION);
+        $rowMinimums = $this->getRowMinimums($this->reduced);
+        $this->reduced = $this->reduce($this->reduced, $rowMinimums, self::ROW_REDUCTION);
+
+
         $this->starred = $this->starZeros($this->reduced);
 
-        if (count($this->starred) === $this->matrix->getM()) {
+        check_all_starred :
+            if (min($this->starred) > -1) {
             return $this->starred;
         }
 
@@ -301,43 +299,71 @@ class Hungarian
          * - Prime any uncovered zero
          * - If there is a starred zero in the primed zero's row, uncover the starred zero's column
          */
-        $uncovered_matrix = $this->getUncoveredMatrix($this->reduced, $this->covered['column'], $this->covered['row']);
-        $min = min(min($uncovered_matrix->getMatrix()));
-
-        $rows = $this->covered['row'];
-        $columns = $this->covered['column'];
-        $row_size = $this->reduced->getN();
-        $sum_matrix = new Matrix(
-            array_map(function ($row_index) use ($rows, $columns, $row_size, $min) {
-                $new_row = array_fill(0, $row_size, 0);
-                foreach ($new_row as $column_index => $element) {
-                    if (in_array($row_index, $rows) && in_array($column_index, $columns)) {
-                        $new_row[$column_index] = $min;
-                    } elseif (!in_array($row_index, $rows) && !in_array($column_index, $columns)) {
-                        $new_row[$column_index] = -$min;
-                    }
+        subtract_minimum :
+            $uncoveredRowMinimums = $this->getUncoveredRowElementMinimums($this->reduced);
+            $min = min(array_filter($uncoveredRowMinimums->getVector(), function (int $element, int $row_index) {
+                return !$this->isRowCovered($row_index);
+            }, ARRAY_FILTER_USE_BOTH));
+        if ($min > 0) {
+            $columnMinimums = $columnMinimums->getVector();
+            $rowMinimums = $rowMinimums->getVector();
+            $uncoveredRowMinimums = $uncoveredRowMinimums->getVector();
+            foreach (range(0, $this->matrix->getM() - 1) as $i) {
+                if (!$this->isColumnCovered($i)) {
+                    $columnMinimums[$i] += $min;
                 }
-                return $new_row;
-            }, range(0, $this->reduced->getM() - 1))
-        );
-        $this->reduced = $this->reduced->add($sum_matrix);
-
-        for ($column_index = 0; $column_index < $this->reduced->getM(); $column_index++) {
-            if (in_array($column_index, $this->covered['column'])) {
-                continue;
+                if ($this->isRowCovered($i)) {
+                    $rowMinimums[$i] -= $min;
+                } else {
+                    $uncoveredRowMinimums[$i] -= $min;
+                }
             }
-            for ($row_index = 0; $row_index < $this->reduced->getN(); $row_index++) {
-                if (!in_array($row_index, $this->covered['row']) && $this->reduced[$row_index][$column_index] === 0) {
-                    $this->primed[$column_index] = $row_index;
-                    $column_to_uncover = array_search($row_index, $this->starred, true);
-                    if (isset($column_to_uncover)) {
-                        unset($this->covered['column'][$column_to_uncover]);
-                    }
+            $columnMinimums = new Vector($columnMinimums);
+            $rowMinimums = new Vector($rowMinimums);
+            $uncoveredRowMinimums = new Vector($uncoveredRowMinimums);
+
+            $this->reduced = $this->reduce($this->matrix, $columnMinimums, self::COLUMN_REDUCTION);
+            $this->reduced = $this->reduce($this->reduced, $rowMinimums, self::ROW_REDUCTION);
+        }
+
+        prime_uncovered_zero :
+            $chosen_zero = [
+            "row" => -1,
+            "column" => -1,
+        ];
+        foreach ($this->reduced->getMatrix() as $row_index => $row) {
+            foreach ($row as $column_index => $cell) {
+                if ($cell === 0 && !$this->isRowCovered($row_index) && !$this->isColumnCovered($column_index)) {
+                    $chosen_zero["row"] = $row_index;
+                    $chosen_zero["column"] = $column_index;
                     break 2;
                 }
             }
         }
+        $this->primed = array_replace($this->primed, array($chosen_zero["row"] => $chosen_zero["column"]));
+        if ($this->isRowStarred($chosen_zero["row"])) {
+            goto subtract_minimum;
+        }
 
+        star_primed_zero :
+            if ($this->isColumnStarred($chosen_zero["column"])) {
+            $starred_zero = [
+                "row" => $this->starred[$chosen_zero["column"]],
+                "column" => $chosen_zero["column"]
+            ];
+            $this->starred = array_replace($this->starred, array($chosen_zero["column"] => $chosen_zero["row"]));
+            $chosen_zero = [
+                "row" => $starred_zero["row"],
+                "column" => $this->primed[$starred_zero["row"]]
+            ];
+            goto star_primed_zero;
+        } else {
+            $this->starred = array_replace($this->starred, array($chosen_zero["column"] => $chosen_zero["row"]));
+        }
+
+        delete_all_primes :
+            $this->primed = array_fill(0, $this->matrix->getM(), -1);
+        goto check_all_starred;
 
         /*
          * Generate zero matrix
