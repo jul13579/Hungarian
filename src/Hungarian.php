@@ -30,6 +30,9 @@ class Hungarian
      */
     protected $primed = [];
 
+    /**
+     * Constants for use in reduction-function
+     */
     const COLUMN_REDUCTION = 0;
     const ROW_REDUCTION = 1;
 
@@ -50,46 +53,94 @@ class Hungarian
         $this->primed = $this->starred;
     }
 
+    /**
+     * Check if column contains a star
+     *
+     * @param int $column_index Column index
+     * @return bool
+     */
     protected function isColumnStarred(int $column_index)
     {
         return $this->starred[$column_index] > -1;
     }
 
+    /**
+     * Check if row contains a star
+     *
+     * @param int $row_index Row index
+     * @return bool
+     */
     protected function isRowStarred(int $row_index)
     {
         return isset(array_flip($this->starred)[$row_index]);
     }
 
+    /**
+     * Check if a row contains a primed zero
+     *
+     * @param int $row_index Row index
+     * @return bool
+     */
     protected function isRowPrimed(int $row_index)
     {
         return $this->primed[$row_index] > -1;
     }
 
+    /**
+     * Check if column is covered
+     *
+     * @param int $column_index Column index
+     * @return bool
+     */
     protected function isColumnCovered(int $column_index)
     {
         return $this->isColumnStarred($column_index) && !$this->isRowPrimed($this->starred[$column_index]);
     }
 
+    /**
+     * Check if row is covered
+     *
+     * @param int $row_index Row index
+     * @return bool
+     */
     protected function isRowCovered(int $row_index)
     {
         return $this->isRowPrimed($row_index);
     }
 
+    /**
+     * Get row minimums
+     *
+     * @param Matrix $matrix Matrix to get row minimums from
+     * @return Vector
+     */
     protected function getRowMinimums(Matrix $matrix)
     {
         return new Vector(array_map("min", $matrix->getMatrix()));
     }
 
+    /**
+     * Get column minimums
+     *
+     * @param Matrix $matrix Matrix to get column minimums from
+     * @return Vector
+     */
     protected function getColumnMinimums(Matrix $matrix)
     {
         return $this->getRowMinimums($matrix->transpose());
     }
 
+    /**
+     * Get row minimums of uncovered matrix elements
+     *
+     * @param Matrix $matrix Matrix to get uncovered row minimums from
+     * @return Vector
+     */
     protected function getUncoveredRowElementMinimums(Matrix $matrix)
     {
         return new Vector(array_map(function (int $row_index, array $row) {
             return min(array_filter($row, function (int $element, int $column_index) use ($row_index) {
-                return !$this->isColumnCovered($column_index);// && !$this->isRowPrimed($row_index);
+                return !$this->isColumnCovered($column_index);
             }, ARRAY_FILTER_USE_BOTH));
         }, array_keys($matrix->getMatrix()), $matrix->getMatrix()));
     }
@@ -107,6 +158,14 @@ class Hungarian
         }, array_keys($assignment), $assignment));
     }
 
+    /**
+     * Reduces a matrix column- or row-wise
+     *
+     * @param Matrix $matrix Matrix to be reduced
+     * @param Vector $minimums Vector of values to be reduced by
+     * @param int $reduction_type Type of reduction. Possible options are ROW_REDUCTION and COLUMN_REDUCTION
+     * @return Matrix
+     */
     protected function reduce(Matrix $matrix, Vector $minimums, int $reduction_type)
     {
         $matrix = $reduction_type === self::COLUMN_REDUCTION ? $matrix->transpose() : $matrix;
@@ -143,17 +202,6 @@ class Hungarian
         return array_replace($this->starred, $starred);
     }
 
-    protected function getUncoveredMatrix(Matrix $matrix, array $covered_columns, array $covered_rows)
-    {
-        foreach (array_reverse($covered_columns) as $column) {
-            $matrix = $matrix->columnExclude($column);
-        }
-        foreach (array_reverse($covered_rows) as $row) {
-            $matrix = $matrix->rowExclude($row);
-        }
-        return $matrix;
-    }
-
     /**
      * Solves the matrix using the hungarian algorithm
      *
@@ -186,13 +234,13 @@ class Hungarian
          * - Subtract minimum from double covered elements
          * - Add minimum to uncovered elements
          * - Prime any uncovered zero
-         * - If there is a starred zero in the primed zero's row, uncover the starred zero's column
+         * - If there is a starred zero in the primed zero's row, uncover the starred zero's column and repeat all these steps
          */
         subtract_minimum :
             $uncoveredRowMinimums = $this->getUncoveredRowElementMinimums($this->reduced);
-            $min = min(array_filter($uncoveredRowMinimums->getVector(), function (int $element, int $row_index) {
-                return !$this->isRowCovered($row_index);
-            }, ARRAY_FILTER_USE_BOTH));
+        $min = min(array_filter($uncoveredRowMinimums->getVector(), function (int $element, int $row_index) {
+            return !$this->isRowCovered($row_index);
+        }, ARRAY_FILTER_USE_BOTH));
         if ($min > 0) {
             $columnMinimums = $columnMinimums->getVector();
             $rowMinimums = $rowMinimums->getVector();
@@ -234,6 +282,13 @@ class Hungarian
             goto subtract_minimum;
         }
 
+        /**
+         * Step 3)
+         * - Star primed zero
+         * - If there is a starred zero in the primed zero's column, unstar it
+         * - Select the primed zero in the unstarred zero's row and repeat all these steps
+         * - Else delete all primes and go back to step 2
+         */
         star_primed_zero :
             if ($this->isColumnStarred($chosen_zero["column"])) {
             $starred_zero = [
