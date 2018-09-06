@@ -153,7 +153,7 @@ class Hungarian
      */
     public function totalCost(array $assignment)
     {
-        return array_sum(array_map(function (int $column, int $row) {
+        return array_sum(array_map(function (int $row, int $column) {
             return $this->matrix[$row][$column];
         }, array_keys($assignment), $assignment));
     }
@@ -225,7 +225,7 @@ class Hungarian
 
         check_all_starred :
             if (min($this->starred) > -1) {
-            return $this->starred;
+            return array_flip($this->starred);
         }
 
         /**
