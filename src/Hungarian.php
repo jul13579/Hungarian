@@ -309,4 +309,14 @@ class Hungarian
             $this->primed = array_fill(0, $this->matrix->getM(), -1);
         goto check_all_starred;
     }
+
+    /**
+     * Get reduced matrix. This is useful if you want to do further operations on the reduced matrix outside this library
+     *
+     * @return Matrix
+     */
+    public function getReducedMatrix()
+    {
+        return $this->reduced;
+    }
 }
